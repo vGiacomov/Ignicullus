@@ -1,6 +1,7 @@
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { useMissionStore } from '../store/missionStore'
-import { generatePdfReport } from '../services/apiService'
+import html2canvas from 'html2canvas'
+import jsPDF from 'jspdf'
 import {
   ScatterChart, Scatter, LineChart, Line,
   XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
@@ -32,32 +33,17 @@ export default function AnalysisPage() {
   const {
     telemetry,
     events,
-    orbitAchieved,
-    rocket,
-    atmosphere,
-    simConfig,
-    scenarioId
+    orbitAchieved
   } = useMissionStore()
 
   const [pdfLoading, setPdfLoading] = useState(false)
 
-  const handleGeneratePdfReport = async () => {
-    try {
-      setPdfLoading(true)
-
-      await generatePdfReport({
-        rocket,
-        atmosphere,
-        sim: simConfig,
-        scenario: scenarioId
-      })
-    } catch (error) {
-      console.error('PDF report generation error:', error)
-      alert('Nie udało się wygenerować raportu PDF.')
-    } finally {
-      setPdfLoading(false)
-    }
-  }
+  const kpiRef = useRef<HTMLDivElement>(null)
+  const trajectoryRef = useRef<HTMLDivElement>(null)
+  const radarRef = useRef<HTMLDivElement>(null)
+  const dragRef = useRef<HTMLDivElement>(null)
+  const thrustRef = useRef<HTMLDivElement>(null)
+  const eventsRef = useRef<HTMLDivElement>(null)
 
   if (telemetry.length === 0) {
     return (
@@ -92,7 +78,7 @@ export default function AnalysisPage() {
   const finalVel = telemetry[telemetry.length - 1].vel
 
   const radarData = [
-    { metric: 'ΔV Efficiency', val: Math.min(finalVel / 7700 * 100, 100) },
+    { metric: 'DV Efficiency', val: Math.min(finalVel / 7700 * 100, 100) },
     { metric: 'Altitude', val: Math.min(finalAlt / 400 * 100, 100) },
     { metric: 'Stability', val: Math.min(Math.max(...telemetry.map(t => t.stab)) / 3 * 100, 100) },
     { metric: 'Accel Safety', val: Math.max(0, 100 - maxAccel / 10 * 100) },
@@ -101,6 +87,255 @@ export default function AnalysisPage() {
   ]
 
   const traj = cd.map(p => ({ x: p.downrange, y: p.alt }))
+
+  const captureElement = async (element: HTMLDivElement | null) => {
+    if (!element) return null
+
+    const canvas = await html2canvas(element, {
+      scale: 2,
+      backgroundColor: '#161b22',
+      useCORS: true,
+      logging: false
+    })
+
+    return canvas.toDataURL('image/png')
+  }
+
+  const addTitle = (pdf: jsPDF, title: string, y: number) => {
+    pdf.setFont('helvetica', 'bold')
+    pdf.setFontSize(14)
+    pdf.setTextColor(25, 25, 25)
+    pdf.text(title, 14, y)
+  }
+
+  const addParagraph = (pdf: jsPDF, text: string, y: number) => {
+    pdf.setFont('helvetica', 'normal')
+    pdf.setFontSize(10)
+    pdf.setTextColor(45, 45, 45)
+
+    const pageWidth = pdf.internal.pageSize.getWidth()
+    const lines = pdf.splitTextToSize(text, pageWidth - 28)
+
+    pdf.text(lines, 14, y)
+
+    return y + lines.length * 5 + 4
+  }
+
+  const addSectionImage = (
+    pdf: jsPDF,
+    imageData: string | null,
+    title: string,
+    yStart: number,
+    maxHeight: number
+  ) => {
+    if (!imageData) return yStart
+
+    const pageWidth = pdf.internal.pageSize.getWidth()
+    const margin = 14
+    const imageWidth = pageWidth - margin * 2
+
+    pdf.setFont('helvetica', 'bold')
+    pdf.setFontSize(12)
+    pdf.setTextColor(25, 25, 25)
+    pdf.text(title, margin, yStart)
+
+    const imageProperties = pdf.getImageProperties(imageData)
+    let imageHeight = (imageProperties.height * imageWidth) / imageProperties.width
+
+    if (imageHeight > maxHeight) {
+      imageHeight = maxHeight
+    }
+
+    pdf.addImage(imageData, 'PNG', margin, yStart + 6, imageWidth, imageHeight)
+
+    return yStart + imageHeight + 16
+  }
+
+  const handleGeneratePdfReport = async () => {
+    try {
+      setPdfLoading(true)
+
+      const kpiImage = await captureElement(kpiRef.current)
+      const trajectoryImage = await captureElement(trajectoryRef.current)
+      const radarImage = await captureElement(radarRef.current)
+      const dragImage = await captureElement(dragRef.current)
+      const thrustImage = await captureElement(thrustRef.current)
+      const eventsImage = await captureElement(eventsRef.current)
+
+      const pdf = new jsPDF({
+        orientation: 'portrait',
+        unit: 'mm',
+        format: 'a4'
+      })
+
+      const pageWidth = pdf.internal.pageSize.getWidth()
+      const margin = 14
+
+      pdf.setFillColor(13, 17, 23)
+      pdf.rect(0, 0, pageWidth, 48, 'F')
+
+      pdf.setTextColor(240, 165, 0)
+      pdf.setFont('helvetica', 'bold')
+      pdf.setFontSize(18)
+      pdf.text('Satellite Launch System', margin, 18)
+
+      pdf.setTextColor(255, 255, 255)
+      pdf.setFontSize(12)
+      pdf.text('Digital Twin Mission - Mission Analysis Report', margin, 28)
+
+      pdf.setTextColor(170, 170, 170)
+      pdf.setFontSize(9)
+      pdf.text(`Generated: ${new Date().toLocaleString()}`, margin, 38)
+
+      let y = 62
+
+      addTitle(pdf, '1. Executive Summary', y)
+      y += 8
+
+      const missionStatus = orbitAchieved ? 'SUCCESS' : 'FAILED / ANALYSIS REQUIRED'
+      const orbitStatus = orbitAchieved ? 'YES' : 'NO'
+
+      y = addParagraph(
+        pdf,
+        'This report presents a post-flight analysis of a simulated launch mission performed in the Digital Twin Mission environment. The purpose of the report is to summarize the mission result, evaluate the most important flight parameters and document the behavior of the simulated launch vehicle.',
+        y
+      )
+
+      y = addParagraph(
+        pdf,
+        `Mission status: ${missionStatus}. Orbit reached: ${orbitStatus}. The vehicle reached a maximum altitude of ${maxAlt.toFixed(1)} km and a maximum velocity of ${maxVel.toFixed(0)} m/s.`,
+        y
+      )
+
+      y += 3
+      addTitle(pdf, '2. Key Performance Indicators', y)
+      y += 8
+
+      const kpis = [
+        ['Maximum altitude', `${maxAlt.toFixed(1)} km`],
+        ['Maximum velocity', `${maxVel.toFixed(0)} m/s`],
+        ['Maximum Mach number', maxMach.toFixed(2)],
+        ['Maximum dynamic pressure Max Q', `${maxQ.toFixed(1)} kPa`],
+        ['Maximum acceleration', `${maxAccel.toFixed(2)} g`],
+        ['Orbit achieved', orbitStatus],
+        ['Telemetry samples', `${telemetry.length}`],
+        ['Mission events', `${events.length}`],
+      ]
+
+      pdf.setFontSize(10)
+
+      kpis.forEach(([label, value]) => {
+        pdf.setFont('helvetica', 'bold')
+        pdf.setTextColor(25, 25, 25)
+        pdf.text(`${label}:`, margin, y)
+
+        pdf.setFont('helvetica', 'normal')
+        pdf.setTextColor(45, 45, 45)
+        pdf.text(value, margin + 72, y)
+
+        y += 6
+      })
+
+      y += 4
+      addTitle(pdf, '3. Engineering Interpretation', y)
+      y += 8
+
+      if (orbitAchieved) {
+        y = addParagraph(
+          pdf,
+          'The mission profile indicates successful orbital insertion according to the configured success criteria. The current rocket configuration can be treated as a valid baseline for additional scenario testing, mass optimization and robustness analysis.'
+          ,
+          y
+        )
+      } else {
+        y = addParagraph(
+          pdf,
+          'The mission profile did not satisfy the orbital insertion criteria. The simulation indicates that the current configuration requires further optimization, especially in propulsion performance, mass distribution, staging strategy or pitch profile.'
+          ,
+          y
+        )
+
+        y = addParagraph(
+          pdf,
+          'The Digital Twin model allows repeated testing of modified rocket parameters before selecting the best configuration for the mission profile.'
+          ,
+          y
+        )
+      }
+
+      y += 2
+      addTitle(pdf, '4. KPI Dashboard Snapshot', y)
+      y += 6
+      addSectionImage(pdf, kpiImage, '', y, 45)
+
+      pdf.addPage()
+
+      y = 18
+      addTitle(pdf, '5. Visual Mission Analysis', y)
+      y += 10
+
+      y = addSectionImage(pdf, trajectoryImage, '5.1 Flight Trajectory - Downrange vs Altitude', y, 105)
+
+      if (y > 180) {
+        pdf.addPage()
+        y = 18
+      }
+
+      y = addSectionImage(pdf, radarImage, '5.2 Mission Performance Radar', y, 105)
+
+      pdf.addPage()
+
+      y = 18
+      addTitle(pdf, '6. Aerodynamic and Propulsion Analysis', y)
+      y += 10
+
+      y = addSectionImage(pdf, dragImage, '6.1 Drag Coefficient vs Time', y, 95)
+
+      if (y > 180) {
+        pdf.addPage()
+        y = 18
+      }
+
+      y = addSectionImage(pdf, thrustImage, '6.2 Thrust vs Drag', y, 95)
+
+      pdf.addPage()
+
+      y = 18
+      addTitle(pdf, '7. Mission Event Timeline', y)
+      y += 10
+
+      y = addSectionImage(pdf, eventsImage, '7.1 Recorded Mission Events', y, 150)
+
+      if (y > 230) {
+        pdf.addPage()
+        y = 18
+      }
+
+      addTitle(pdf, '8. Recommendations', y)
+      y += 8
+
+      if (orbitAchieved) {
+        addParagraph(
+          pdf,
+          'Recommended next steps include comparing multiple mission scenarios, reducing launch mass, validating the flight profile under atmospheric anomalies and testing sensitivity to engine performance changes.',
+          y
+        )
+      } else {
+        addParagraph(
+          pdf,
+          'Recommended next steps include increasing second-stage performance, reducing structural mass, optimizing propellant distribution, improving the gravity turn profile and comparing the result with the AI-Optimized scenario.',
+          y
+        )
+      }
+
+      pdf.save('digital-twin-mission-analysis-report.pdf')
+    } catch (error) {
+      console.error('PDF report generation error:', error)
+      alert('Nie udało się wygenerować raportu PDF.')
+    } finally {
+      setPdfLoading(false)
+    }
+  }
 
   return (
     <div style={{ padding: '28px 36px' }}>
@@ -149,11 +384,11 @@ export default function AnalysisPage() {
             boxShadow: '0 0 18px rgba(240, 165, 0, 0.25)'
           }}
         >
-          {pdfLoading ? 'Generating PDF...' : '📄 Generate PDF Report'}
+          {pdfLoading ? 'Generating Full Report...' : '📄 Export Full Mission Report'}
         </button>
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(6,1fr)', gap: 10, marginBottom: 24 }}>
+      <div ref={kpiRef} style={{ display: 'grid', gridTemplateColumns: 'repeat(6,1fr)', gap: 10, marginBottom: 24 }}>
         {[
           { l: 'Max Altitude', v: `${maxAlt.toFixed(1)} km`, c: '#f0a500' },
           { l: 'Max Velocity', v: `${maxVel.toFixed(0)} m/s`, c: '#00c896' },
@@ -196,7 +431,7 @@ export default function AnalysisPage() {
       </div>
 
       <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: 16, marginBottom: 16 }}>
-        <div style={{ background: '#161b22', border: '1px solid #21262d', borderRadius: 10, padding: '16px' }}>
+        <div ref={trajectoryRef} style={{ background: '#161b22', border: '1px solid #21262d', borderRadius: 10, padding: '16px' }}>
           <div style={{
             fontSize: '0.62rem',
             color: '#f0a500',
@@ -237,7 +472,7 @@ export default function AnalysisPage() {
           </ResponsiveContainer>
         </div>
 
-        <div style={{ background: '#161b22', border: '1px solid #21262d', borderRadius: 10, padding: '16px' }}>
+        <div ref={radarRef} style={{ background: '#161b22', border: '1px solid #21262d', borderRadius: 10, padding: '16px' }}>
           <div style={{
             fontSize: '0.62rem',
             color: '#bc8cff',
@@ -262,7 +497,7 @@ export default function AnalysisPage() {
       </div>
 
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginBottom: 16 }}>
-        <div style={{ background: '#161b22', border: '1px solid #21262d', borderRadius: 10, padding: '16px' }}>
+        <div ref={dragRef} style={{ background: '#161b22', border: '1px solid #21262d', borderRadius: 10, padding: '16px' }}>
           <div style={{
             fontSize: '0.62rem',
             color: '#58a6ff',
@@ -285,7 +520,7 @@ export default function AnalysisPage() {
           </ResponsiveContainer>
         </div>
 
-        <div style={{ background: '#161b22', border: '1px solid #21262d', borderRadius: 10, padding: '16px' }}>
+        <div ref={thrustRef} style={{ background: '#161b22', border: '1px solid #21262d', borderRadius: 10, padding: '16px' }}>
           <div style={{
             fontSize: '0.62rem',
             color: '#ff8800',
@@ -310,7 +545,7 @@ export default function AnalysisPage() {
         </div>
       </div>
 
-      <div style={{ background: '#161b22', border: '1px solid #21262d', borderRadius: 10, padding: '16px' }}>
+      <div ref={eventsRef} style={{ background: '#161b22', border: '1px solid #21262d', borderRadius: 10, padding: '16px' }}>
         <div style={{
           fontSize: '0.62rem',
           color: '#00c896',
