@@ -3,6 +3,56 @@ import { useMissionStore } from '../store/missionStore'
 let ttsQueue: string[] = []
 let ttsActive = false
 let ttsUnlocked = false
+let cachedVoice: SpeechSynthesisVoice | null = null
+
+const TTS_SETTINGS = {
+  rate: 1.05,
+  pitch: 1.0,
+  f4Pitch: 1.15,
+  volume: 1.0,
+  maxQueue: 120,
+  preferredFemaleVoice: [
+    'f4',
+    'f-4',
+    'female',
+    'zira',
+    'samantha',
+    'hazel',
+    'susan',
+    'amelia',
+    'aria',
+    'candice',
+    'helen',
+    'ivy',
+    'jenny',
+    'karen',
+    'luna',
+    'olivia',
+    'sara',
+    'sarah',
+  ],
+}
+
+const TTS_EVENT_MESSAGES: Record<string, string> = {
+  'GRAVITY TURN': 'Gravity turn initiated.',
+  'MECO': 'Main engine cutoff. Stage one burnout.',
+  'STAGE SEP': 'Stage separation confirmed.',
+  'SES-1': 'Stage two ignition.',
+  'FAIRING SEP': 'Payload fairing jettisoned.',
+  'SECO': 'Second engine cutoff.',
+  'PAYLOAD SEP': 'Payload separation. Satellite deployment.',
+  'MAX-Q': 'Max Q.',
+  'ENGINE FAILURE': 'Warning. Engine failure detected.',
+  'ORBIT ACHIEVED': 'Orbit achieved. Mission success.',
+  'ABORT': 'Mission abort.',
+  'IMPACT': 'Vehicle impact. Mission terminated.',
+}
+
+if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
+  window.speechSynthesis.addEventListener('voiceschanged', () => {
+    cachedVoice = null
+  })
+}
 
 function canUseTTS() {
   return typeof window !== 'undefined' && 'speechSynthesis' in window
@@ -26,17 +76,52 @@ function unlockTTS() {
   }
 }
 
-function getVoice() {
+function resolveCachedVoice() {
   if (!canUseTTS()) return null
+  if (cachedVoice) return cachedVoice
 
   const voices = window.speechSynthesis.getVoices()
+  if (!voices.length) return null
 
-  return (
+  const toLower = (value: string) => value.toLowerCase()
+  const isFemaleHint = (v: SpeechSynthesisVoice) => {
+    const candidate = `${v.name} ${v.voiceURI}`.toLowerCase()
+    return TTS_SETTINGS.preferredFemaleVoice.some(hint => candidate.includes(hint))
+  }
+
+  const f4ByExact = voices.find(v => toLower(v.name).includes('f4') || toLower(v.voiceURI).includes('f4'))
+  const likelyFemale = voices.find(v => toLower(v.lang).startsWith('en') && isFemaleHint(v))
+  const anyFemale = voices.find(v => isFemaleHint(v))
+
+  cachedVoice =
+    f4ByExact ||
+    likelyFemale ||
+    anyFemale ||
     voices.find(v => v.lang === 'en-US') ||
     voices.find(v => v.lang.startsWith('en')) ||
     voices[0] ||
     null
-  )
+
+  return cachedVoice
+}
+
+function getVoice() {
+  return resolveCachedVoice()
+}
+
+function enqueueTts(text: string) {
+  const cleaned = text.trim()
+  if (!cleaned) return
+
+  if (ttsQueue.length >= TTS_SETTINGS.maxQueue) {
+    ttsQueue = ttsQueue.slice(1)
+  }
+
+  ttsQueue.push(cleaned)
+
+  if (!ttsActive) {
+    flushTTS()
+  }
 }
 
 function speak(text: string) {
@@ -46,12 +131,7 @@ function speak(text: string) {
   if (!canUseTTS()) return
 
   unlockTTS()
-
-  ttsQueue.push(text)
-
-  if (!ttsActive) {
-    flushTTS()
-  }
+  enqueueTts(text)
 }
 
 function flushTTS() {
@@ -76,15 +156,21 @@ function flushTTS() {
 
   const utterance = new SpeechSynthesisUtterance(text)
   const voice = getVoice()
+  const hasFemalePreference = !!(voice && (
+    `${voice.name} ${voice.voiceURI}`.toLowerCase().includes('f4') ||
+    TTS_SETTINGS.preferredFemaleVoice.some((hint) =>
+      `${voice.name} ${voice.voiceURI}`.toLowerCase().includes(hint)
+    )
+  ))
 
   if (voice) {
     utterance.voice = voice
   }
 
   utterance.lang = voice?.lang || 'en-US'
-  utterance.rate = 1.05
-  utterance.pitch = 1.0
-  utterance.volume = 1.0
+  utterance.rate = TTS_SETTINGS.rate
+  utterance.pitch = hasFemalePreference ? TTS_SETTINGS.f4Pitch : TTS_SETTINGS.pitch
+  utterance.volume = TTS_SETTINGS.volume
 
   utterance.onend = () => {
     flushTTS()
@@ -139,23 +225,17 @@ export function launchSimulation() {
         icon: msg.icon
       })
 
-      const ttsMap: Record<string, string> = {
-        'GRAVITY TURN': 'Gravity turn initiated.',
-        'MECO': 'Main engine cutoff. Stage one burnout.',
-        'STAGE SEP': 'Stage separation confirmed.',
-        'SES-1': 'Stage two ignition.',
-        'FAIRING SEP': 'Payload fairing jettisoned.',
-        'SECO': 'Second engine cutoff.',
-        'PAYLOAD SEP': 'Payload separation. Satellite deployment.',
-        'MAX-Q': `Max Q. ${msg.desc}`,
-        'ENGINE FAILURE': 'Warning. Engine failure detected.',
-        'ORBIT ACHIEVED': 'Orbit achieved. Mission success.',
-        'ABORT': `Mission abort. ${msg.desc}`,
-        'IMPACT': 'Vehicle impact. Mission terminated.',
-      }
-
-      if (ttsMap[msg.name]) {
-        speak(ttsMap[msg.name])
+      const ttsText = TTS_EVENT_MESSAGES[msg.name]
+      if (ttsText) {
+        if (msg.name === 'MAX-Q') {
+          speak(`Max Q. ${msg.desc}`)
+          return
+        }
+        if (msg.name === 'ABORT') {
+          speak(`Mission abort. ${msg.desc}`)
+          return
+        }
+        speak(ttsText)
       }
     } else if (msg.type === 'complete') {
       s.setOrbit(msg.orbit, msg.fail_reason || '')

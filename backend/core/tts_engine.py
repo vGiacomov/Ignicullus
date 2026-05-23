@@ -12,7 +12,7 @@ import io, threading, tempfile, os
 from typing import Optional
 
 # ── Config ─────────────────────────────────────────────────────────────────
-SUPERTONIC_VOICE  = os.environ.get("TTS_VOICE", "M1")   # M1 M2 F1 F2 etc.
+SUPERTONIC_VOICE  = os.environ.get("TTS_VOICE", "F4")   # M1 M2 F1 F2 F3 F4...
 SUPERTONIC_LANG   = os.environ.get("TTS_LANG",  "en")
 
 

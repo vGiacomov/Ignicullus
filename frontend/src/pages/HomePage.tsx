@@ -27,15 +27,15 @@ export default function HomePage() {
         <div style={{ fontFamily:'var(--font-hud)', fontSize:'clamp(2.5rem,5vw,5rem)',
           fontWeight:900, color:'#f0a500', lineHeight:1.05, letterSpacing:'0.1em',
           textTransform:'uppercase', textShadow:'0 0 60px rgba(240,165,0,0.5)' }}>
-          Digital Twin<br/>Mission
+          IGNICULLUS
         </div>
         <div style={{ fontFamily:'var(--font-mono)', fontSize:'0.75rem', color:'#8b949e',
           letterSpacing:'0.28em', textTransform:'uppercase', marginTop:10 }}>
-          Satellite Launch System · PTR Hackathon 2026
+          Satellite Launch System · Mission Digital Twin
         </div>
         <p style={{ marginTop:20, color:'#c9d1d9', fontSize:'1rem', lineHeight:1.8,
           maxWidth:580, textShadow:'0 1px 8px rgba(0,0,0,0.9)' }}>
-          Cyfrowy bliźniak rakiety nośnej dla małego satelity na niską orbitę
+          IGNICULLUS to cyfrowy bliźniak rakiety nośnej dla małego satelity na niską orbitę
           okołoziemską. Symulacja RK4, telemetria live przez WebSocket,
           komentator TTS i optymalizator genetyczny.
         </p>

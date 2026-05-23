@@ -23,10 +23,10 @@ export default function Sidebar() {
       <div style={{ padding:'20px 16px 12px', borderBottom:'1px solid #21262d' }}>
         <div style={{ fontFamily:'var(--font-hud)', fontSize:'0.75rem', color:'#f0a500',
           fontWeight:900, letterSpacing:'0.12em', textTransform:'uppercase' }}>
-          🛸 Digital Twin
+          🛸 IGNICULLUS
         </div>
         <div style={{ fontFamily:'var(--font-hud)', fontSize:'0.62rem', color:'#484f58',
-          letterSpacing:'0.18em', marginTop:2 }}>MISSION v2.0</div>
+          letterSpacing:'0.18em', marginTop:2 }}>LAUNCH SYSTEM v2.0</div>
       </div>
 
       {/* Nav */}

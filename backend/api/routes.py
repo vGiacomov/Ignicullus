@@ -230,7 +230,7 @@ def generate_pdf_report(req: SimRequest):
     scenario_name = _safe_get(req.scenario, "name", req.scenario)
 
     raw_lines = [
-        "SATELLITE LAUNCH SYSTEM - DIGITAL TWIN MISSION",
+        "IGNICULLUS - SATELLITE LAUNCH SYSTEM",
         "MISSION ANALYSIS REPORT",
         "",
         f"Generated at: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
@@ -291,7 +291,7 @@ def generate_pdf_report(req: SimRequest):
 
     raw_lines.extend([
         "",
-        "7. Digital Twin value",
+        "7. IGNICULLUS value",
         "This report documents the influence of selected rocket, atmosphere and mission parameters",
         "on the simulated flight profile. It supports repeated testing and comparison of mission variants.",
     ])

@@ -1,8 +1,8 @@
-# 🚀 Digital Twin Mission — DTM v2.0
+# 🚀 IGNICULLUS
 
-> **PTR Hackathon 2026** | Satellite Launch System Digital Twin
+> Satellite Launch System Digital Twin
 
-Kompletna aplikacja webowa symulująca cyfrowego bliźniaka rakiety nośnej dla małego satelity na LEO.
+IGNICULLUS to kompletna aplikacja webowa symulująca cyfrowego bliźniaka rakiety nośnej dla małego satelity na LEO.
 
 ---
 
@@ -27,7 +27,7 @@ Kompletna aplikacja webowa symulująca cyfrowego bliźniaka rakiety nośnej dla 
 
 ```bash
 git clone <repo-url>
-cd dtm-v2
+cd IGNICULLUS
 docker compose up --build
 ```
 
@@ -58,7 +58,7 @@ npm run dev
 ## 🗂️ Struktura projektu
 
 ```
-dtm-v2/
+IGNICULLUS/
 ├── backend/
 │   ├── main.py                    # FastAPI app + WebSocket endpoint
 │   ├── core/
@@ -141,4 +141,4 @@ Algorytm genetyczny (80 generacji × 40 osobników) minimalizuje masę startową
 
 ---
 
-*PTR Hackathon 2026 — Stalowa Wola*
+*IGNICULLUS*

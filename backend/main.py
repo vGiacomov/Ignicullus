@@ -7,7 +7,7 @@ from fastapi.staticfiles import StaticFiles
 from api.routes import router
 from api.ws_simulate import ws_simulate_handler
 
-app = FastAPI(title="Digital Twin Mission API", version="2.0.0")
+app = FastAPI(title="IGNICULLUS API", version="2.0.0")
 
 app.add_middleware(CORSMiddleware,
     allow_origins=["*"], allow_credentials=True,
@@ -21,7 +21,7 @@ async def ws_endpoint(ws: WebSocket):
 
 @app.get("/api/health")
 def health():
-    return {"status": "ok", "service": "DTM Backend v2.0"}
+    return {"status": "ok", "service": "IGNICULLUS Backend v2.0"}
 
 # Serve built frontend
 dist_path = os.path.join(os.path.dirname(__file__), "..", "frontend", "dist")

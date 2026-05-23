@@ -10,7 +10,7 @@ from dataclasses import dataclass
 from typing import Dict, Optional
 
 
-SUPERTONIC_VOICE = os.environ.get("TTS_VOICE", "M1")
+SUPERTONIC_VOICE = os.environ.get("TTS_VOICE", "F4")
 SUPERTONIC_LANG = os.environ.get("TTS_LANG", "en")
 
 
