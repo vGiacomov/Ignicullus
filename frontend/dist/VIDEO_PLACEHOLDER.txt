@@ -1,0 +1,8 @@
+Place your rocket launch video here as: rocket_launch.mp4
+Recommended: 1920×1080, H.264, loop-friendly, 10-30s
+Free sources:
+  - NASA Public Domain: https://images.nasa.gov
+  - SpaceX YouTube (not free for commercial use)
+  - Pixabay: https://pixabay.com/videos/search/rocket/
+
+The HomePage will show a dark fallback gradient if the file is missing.
