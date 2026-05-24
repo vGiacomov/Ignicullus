@@ -26,7 +26,7 @@ IGNICULLUS to kompletna aplikacja webowa symulująca cyfrowego bliźniaka rakiet
 ### Opcja 1 — Docker Compose (zalecane)
 
 ```bash
-git clone <repo-url>
+git clone https://github.com/vGiacomov/Ignicullus
 cd IGNICULLUS
 docker compose up --build
 ```
