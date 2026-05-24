@@ -50,5 +50,6 @@ coverage/
 # Local artifacts
 *.tmp
 *.temp
+backend/generated_tts/
 
 *.pyc

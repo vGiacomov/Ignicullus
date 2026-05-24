@@ -12,6 +12,9 @@ export const runSyncSimulation = (payload: unknown) =>
 export const runOptimize = (payload: unknown) =>
   api.post('/optimize', payload).then(r => r.data)
 
+export const exportTtsFile = (payload: unknown) =>
+  api.post('/tts/export', payload).then(r => r.data)
+
 export const fetchFlights = (): Promise<FlightRun[]> =>
   api.get('/flights').then(r => r.data)
 

@@ -9,6 +9,7 @@ const NAV = [
   { to:'/analysis',   icon:'📊', label:'Analysis' },
   { to:'/flights',    icon:'🏆', label:'Flight Scores' },
   { to:'/optimizer',  icon:'🧬', label:'AI Optimizer' },
+  { to:'/tts-export', icon:'🔊', label:'TTS Export' },
 ]
 
 export default function Sidebar() {

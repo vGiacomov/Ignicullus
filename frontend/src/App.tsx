@@ -9,6 +9,7 @@ import MissionControlPage from './pages/MissionControlPage'
 import AnalysisPage from './pages/AnalysisPage'
 import OptimizerPage from './pages/OptimizerPage'
 import FlightHistoryPage from './pages/FlightHistoryPage'
+import TtsExportPage from './pages/TtsExportPage'
 
 export default function App() {
   const setScenarios = useMissionStore(s => s.setScenarios)
@@ -28,6 +29,7 @@ export default function App() {
             <Route path="/analysis"  element={<AnalysisPage />} />
             <Route path="/flights"   element={<FlightHistoryPage />} />
             <Route path="/optimizer" element={<OptimizerPage />} />
+            <Route path="/tts-export" element={<TtsExportPage />} />
             <Route path="*"          element={<Navigate to="/" />} />
           </Routes>
         </main>

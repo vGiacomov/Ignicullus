@@ -49,3 +49,6 @@ class TTSRequest(BaseModel):
     text:  str
     voice: str = DEFAULT_SUPERTONIC_VOICE
     lang:  str = "en"
+
+class TTSFileRequest(TTSRequest):
+    filename: str = "supertonic-output"

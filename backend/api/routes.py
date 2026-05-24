@@ -5,16 +5,19 @@ from core.optimizer import run_ga
 from core.flight_db import delete_flight_run, list_flight_runs, save_flight_run
 from core.supertonic_tts import DEFAULT_SUPERTONIC_VOICE, synthesize_supertonic_wav
 from core.rocket_model import build_from_config
-from models.schemas import SimRequest, OptimizeRequest, TTSRequest
+from models.schemas import SimRequest, OptimizeRequest, TTSFileRequest, TTSRequest
 
 from datetime import datetime
 from io import BytesIO
 import logging
+from pathlib import Path
+import re
 import textwrap
 
 
 router = APIRouter()
 logger = logging.getLogger("ignicullus.api")
+TTS_EXPORT_DIR = Path(__file__).resolve().parents[1] / "generated_tts"
 
 
 @router.get("/scenarios")
@@ -102,6 +105,43 @@ def supertonic_tts_get(
     lang: str = "en",
 ):
     return _supertonic_tts_response(text, voice, lang)
+
+
+def _safe_wav_filename(filename: str) -> str:
+    stem = Path(filename or "supertonic-output").stem
+    safe_stem = re.sub(r"[^A-Za-z0-9._-]+", "-", stem).strip(".-")
+
+    if not safe_stem:
+        safe_stem = "supertonic-output"
+
+    return f"{safe_stem[:80]}.wav"
+
+
+@router.post("/tts/export")
+def export_supertonic_tts(req: TTSFileRequest):
+    filename = _safe_wav_filename(req.filename)
+    TTS_EXPORT_DIR.mkdir(parents=True, exist_ok=True)
+    output_path = TTS_EXPORT_DIR / filename
+
+    try:
+        audio = synthesize_supertonic_wav(req.text[:5000], req.voice, req.lang)
+    except ModuleNotFoundError as exc:
+        raise HTTPException(
+            status_code=503,
+            detail="Supertonic is not installed. Run: pip install supertonic"
+        ) from exc
+    except Exception as exc:
+        logger.exception("TTS export failed")
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+    output_path.write_bytes(audio)
+
+    return {
+        "filename": filename,
+        "bytes": len(audio),
+        "path": str(output_path),
+        "folder": str(TTS_EXPORT_DIR),
+    }
 
 
 def _safe_get(obj, key, default=None):
