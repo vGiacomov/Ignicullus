@@ -1,9 +1,9 @@
 <!-- @file: .\DOKUMENTACJA.pl.md -->
----
+```yaml
 created: 2026-05-24T00:00:00Z
 updated: 2026-05-24T00:00:00Z
 brief: "Pełna dokumentacja aplikacji IGNICULLUS: architektura, moduły, przepływy, API, TTS, optymalizacja i uruchamianie."
----
+```
 
 # IGNICULLUS - dokumentacja techniczna
 
