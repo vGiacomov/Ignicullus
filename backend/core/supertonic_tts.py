@@ -1,6 +1,7 @@
 import logging
 import os
 import tempfile
+import threading
 import time
 from functools import lru_cache
 
@@ -8,6 +9,24 @@ logger = logging.getLogger("ignicullus.tts")
 
 DEFAULT_SUPERTONIC_VOICE = "F4"
 AVAILABLE_SUPERTONIC_VOICES = ("F1", "F2", "F3", "F4", "F5", "M1", "M2", "M3", "M4", "M5")
+DEFAULT_SUPERTONIC_LANG = "en"
+DEFAULT_SUPERTONIC_WARMUP_TEXTS = (
+    "Supertonic three voice test. Ignicullus telemetry online.",
+    "Launch sequence initiated.",
+    "Gravity turn initiated.",
+    "Main engine cutoff. Stage one burnout.",
+    "Stage separation confirmed.",
+    "Stage two ignition.",
+    "Payload fairing jettisoned.",
+    "Second engine cutoff.",
+    "Payload separation. Satellite deployment.",
+    "Max Q.",
+    "Mission complete. Orbit achieved.",
+    "Mission abort.",
+)
+
+_warmup_started = False
+_warmup_lock = threading.Lock()
 
 
 def normalize_supertonic_voice(voice: str | None) -> str:
@@ -39,11 +58,11 @@ def _engine():
     return engine
 
 
-def synthesize_supertonic_wav(text: str, voice: str = DEFAULT_SUPERTONIC_VOICE, lang: str = "en") -> bytes:
-    voice = normalize_supertonic_voice(voice)
+@lru_cache(maxsize=128)
+def _synthesize_supertonic_wav_cached(text: str, voice: str, lang: str) -> bytes:
     total_start = time.perf_counter()
     logger.warning(
-        "Supertonic TTS: request started voice=%s lang=%s chars=%s",
+        "Supertonic TTS: cache miss voice=%s lang=%s chars=%s",
         voice,
         lang,
         len(text),
@@ -89,3 +108,55 @@ def synthesize_supertonic_wav(text: str, voice: str = DEFAULT_SUPERTONIC_VOICE, 
     finally:
         if temp_path and os.path.exists(temp_path):
             os.remove(temp_path)
+
+
+def synthesize_supertonic_wav(
+    text: str,
+    voice: str = DEFAULT_SUPERTONIC_VOICE,
+    lang: str = DEFAULT_SUPERTONIC_LANG,
+) -> bytes:
+    normalized_text = text.strip()
+    normalized_voice = normalize_supertonic_voice(voice)
+    normalized_lang = (lang or DEFAULT_SUPERTONIC_LANG).strip().lower()
+
+    logger.warning(
+        "Supertonic TTS: request started voice=%s lang=%s chars=%s",
+        normalized_voice,
+        normalized_lang,
+        len(normalized_text),
+    )
+
+    return _synthesize_supertonic_wav_cached(normalized_text, normalized_voice, normalized_lang)
+
+
+def _warmup_supertonic_cache(
+    voice: str = DEFAULT_SUPERTONIC_VOICE,
+    lang: str = DEFAULT_SUPERTONIC_LANG,
+) -> None:
+    start = time.perf_counter()
+    logger.warning("Supertonic TTS: background warmup started voice=%s", voice)
+
+    for text in DEFAULT_SUPERTONIC_WARMUP_TEXTS:
+        try:
+            synthesize_supertonic_wav(text, voice, lang)
+        except Exception:
+            logger.exception("Supertonic TTS: warmup failed for text=%r", text)
+            return
+
+    logger.warning("Supertonic TTS: background warmup complete in %.2fs", time.perf_counter() - start)
+
+
+def start_supertonic_warmup() -> None:
+    global _warmup_started
+
+    with _warmup_lock:
+        if _warmup_started:
+            return
+        _warmup_started = True
+
+    thread = threading.Thread(
+        target=_warmup_supertonic_cache,
+        name="supertonic-tts-warmup",
+        daemon=True,
+    )
+    thread.start()

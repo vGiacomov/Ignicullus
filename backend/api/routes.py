@@ -61,7 +61,7 @@ def delete_flight(run_id: int):
 @router.post("/optimize")
 def optimize(req: OptimizeRequest):
     rocket = build_from_config(req.rocket)
-    return run_ga(rocket, req.generations, req.population)
+    return run_ga(rocket, req.generations, req.population, req.mode)
 
 
 def _supertonic_tts_response(text: str, voice: str, lang: str):

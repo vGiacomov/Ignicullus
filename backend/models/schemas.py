@@ -43,6 +43,7 @@ class OptimizeRequest(BaseModel):
     sim:         SimConfig        = SimConfig()
     generations: int = 80
     population:  int = 40
+    mode:        str = "balanced"
 
 class TTSRequest(BaseModel):
     text:  str

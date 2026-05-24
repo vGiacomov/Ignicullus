@@ -1,16 +1,25 @@
 import sys, os
 sys.path.insert(0, os.path.dirname(__file__))
 
+from contextlib import asynccontextmanager
 from fastapi import FastAPI, HTTPException, Query, Response, WebSocket
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from api.routes import router
 from api.ws_simulate import ws_simulate_handler
 from core.flight_db import init_db
-from core.supertonic_tts import DEFAULT_SUPERTONIC_VOICE, synthesize_supertonic_wav
+from core.supertonic_tts import DEFAULT_SUPERTONIC_VOICE, start_supertonic_warmup, synthesize_supertonic_wav
 from models.schemas import TTSRequest
 
-app = FastAPI(title="IGNICULLUS API", version="2.0.0")
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    if os.getenv("SUPERTONIC_WARMUP") == "1":
+        start_supertonic_warmup()
+    yield
+
+
+app = FastAPI(title="IGNICULLUS API", version="2.0.0", lifespan=lifespan)
 init_db()
 
 app.add_middleware(CORSMiddleware,

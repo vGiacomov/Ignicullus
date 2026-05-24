@@ -1,100 +1,245 @@
-import random, math
-from typing import List, Dict, Any
-from core.rocket_model import RocketModel, build_from_config
-from core.simulation import simulate
-from models.schemas import RocketConfig, AtmosphereConfig, SimConfig
+import math
+import random
+from typing import Any
+
+from core.rocket_model import RocketModel
 
 G0 = 9.80665
 
-def tsiolkovsky_dv(rocket: RocketModel) -> float:
+# Genome: [s1_prop_f, s2_prop_f, s1_isp_f, s2_isp_f, fairing_f]
+BOUNDS = [(0.80, 1.15), (0.80, 1.15), (0.96, 1.06), (0.96, 1.07), (0.60, 1.0)]
+
+MODE_WEIGHTS = {
+    "balanced": (1.0, 1.0, 1.0),
+    "fuel_efficient": (2.0, 0.5, 1.5),
+    "max_altitude": (0.5, 2.5, 1.0),
+    "max_velocity": (0.3, 3.0, 0.5),
+    "max_payload": (1.0, 1.5, 3.0),
+}
+
+
+def _build(base: RocketModel, genome: list[float]) -> RocketModel:
+    s1_prop_f, s2_prop_f, s1_isp_f, s2_isp_f, fairing_f = genome
+    return RocketModel(
+        s1_dry=base.s1_dry,
+        s1_prop=base.s1_prop * s1_prop_f,
+        s1_thrust=base.s1_thrust,
+        s1_isp_v=base.s1_isp_v * s1_isp_f,
+        s1_isp_sl=base.s1_isp_sl * s1_isp_f,
+        s1_burn=base.s1_burn,
+        s2_dry=base.s2_dry,
+        s2_prop=base.s2_prop * s2_prop_f,
+        s2_thrust=base.s2_thrust,
+        s2_isp_v=base.s2_isp_v * s2_isp_f,
+        s2_burn=base.s2_burn,
+        payload=base.payload,
+        fairing=base.fairing * fairing_f,
+        diameter=base.diameter,
+        cd_base=base.cd_base,
+    )
+
+
+def _delta_v(rocket: RocketModel) -> float:
     m0 = rocket.total_mass
-    mf_s1 = m0 - rocket.s1_prop
-    dv1 = rocket.s1_isp_v * G0 * math.log(m0 / max(mf_s1, 1))
+    mf1 = m0 - rocket.s1_prop
+    dv1 = rocket.s1_isp_v * G0 * math.log(m0 / max(mf1, 1))
+
     m0_2 = rocket.s2_dry + rocket.s2_prop + rocket.payload
-    mf_s2 = rocket.s2_dry + rocket.payload
-    dv2 = rocket.s2_isp_v * G0 * math.log(m0_2 / max(mf_s2, 1))
+    mf2 = rocket.s2_dry + rocket.payload
+    dv2 = rocket.s2_isp_v * G0 * math.log(m0_2 / max(mf2, 1))
+
     return dv1 + dv2
 
-def fitness(genome: List[float], base: RocketModel, target_dv: float = 9500.0) -> float:
-    s1_prop_f, s2_prop_f, s1_isp_f, s2_isp_f, fair_f = genome
-    r = RocketModel(
-        s1_dry=base.s1_dry, s1_prop=base.s1_prop * s1_prop_f,
-        s1_thrust=base.s1_thrust, s1_isp_v=base.s1_isp_v * s1_isp_f,
-        s1_isp_sl=base.s1_isp_sl * s1_isp_f, s1_burn=base.s1_burn,
-        s2_dry=base.s2_dry, s2_prop=base.s2_prop * s2_prop_f,
-        s2_thrust=base.s2_thrust, s2_isp_v=base.s2_isp_v * s2_isp_f,
-        s2_burn=base.s2_burn,
-        payload=base.payload, fairing=base.fairing * fair_f,
-        diameter=base.diameter, cd_base=base.cd_base
-    )
-    dv = tsiolkovsky_dv(r)
-    mass = r.total_mass
-    dv_pen = max(0, target_dv - dv) * 50.0
-    return mass + dv_pen
 
-def run_ga(base: RocketModel, generations: int = 80, population: int = 40) -> Dict[str, Any]:
-    BOUNDS = [(0.85, 1.10), (0.85, 1.10), (0.97, 1.05), (0.97, 1.06), (0.7, 1.0)]
+def _objectives(rocket: RocketModel) -> tuple[float, float, float]:
+    delta_v = _delta_v(rocket)
+    mass = rocket.total_mass
+    payload_ratio = rocket.payload / max(mass, 1)
+    return (mass, -delta_v, -payload_ratio)
 
-    def random_genome():
-        return [random.uniform(lo, hi) for lo, hi in BOUNDS]
 
-    def mutate(g, rate=0.25):
-        return [gi + random.gauss(0, (hi-lo)*0.08) if random.random() < rate
-                else gi for gi, (lo, hi) in zip(g, BOUNDS)]
+def _dominates(a: tuple[float, ...], b: tuple[float, ...]) -> bool:
+    return all(ai <= bi for ai, bi in zip(a, b)) and any(ai < bi for ai, bi in zip(a, b))
 
-    def clip(g):
-        return [max(lo, min(hi, gi)) for gi, (lo, hi) in zip(g, BOUNDS)]
 
-    def crossover(a, b):
-        pt = random.randint(1, len(a)-1)
-        return clip(a[:pt] + b[pt:])
+def _fast_nondominated_sort(pop_obj: list[tuple[float, ...]]) -> list[list[int]]:
+    size = len(pop_obj)
+    dominated_by = [0] * size
+    dominates = [[] for _ in range(size)]
+    fronts = [[]]
 
-    pop = [random_genome() for _ in range(population)]
-    history = []
-    best_g = pop[0]; best_f = float('inf')
+    for p in range(size):
+        for q in range(size):
+            if p == q:
+                continue
+            if _dominates(pop_obj[p], pop_obj[q]):
+                dominates[p].append(q)
+            elif _dominates(pop_obj[q], pop_obj[p]):
+                dominated_by[p] += 1
 
-    for gen in range(generations):
-        scored = sorted([(fitness(g, base), g) for g in pop], key=lambda x: x[0])
-        f0, g0 = scored[0]
-        if f0 < best_f:
-            best_f = f0; best_g = g0
-        history.append(round(tsiolkovsky_dv(RocketModel(
-            s1_dry=base.s1_dry, s1_prop=base.s1_prop*g0[0],
-            s1_thrust=base.s1_thrust, s1_isp_v=base.s1_isp_v*g0[2],
-            s1_isp_sl=base.s1_isp_sl*g0[2], s1_burn=base.s1_burn,
-            s2_dry=base.s2_dry, s2_prop=base.s2_prop*g0[1],
-            s2_thrust=base.s2_thrust, s2_isp_v=base.s2_isp_v*g0[3],
-            s2_burn=base.s2_burn, payload=base.payload, fairing=base.fairing*g0[4],
-            diameter=base.diameter, cd_base=base.cd_base
-        )), 1))
-        # Selection + reproduction
-        elite = [g for _, g in scored[:population//5]]
-        children = []
-        while len(children) < population - len(elite):
-            a, b = random.choices(elite + [g for _, g in scored[:population//2]], k=2)
-            children.append(clip(mutate(crossover(a, b))))
-        pop = elite + children
+        if dominated_by[p] == 0:
+            fronts[0].append(p)
 
-    s1_pf, s2_pf, s1_if, s2_if, fair_f = best_g
-    dv_opt = tsiolkovsky_dv(RocketModel(
-        s1_dry=base.s1_dry, s1_prop=base.s1_prop*s1_pf,
-        s1_thrust=base.s1_thrust, s1_isp_v=base.s1_isp_v*s1_if,
-        s1_isp_sl=base.s1_isp_sl*s1_if, s1_burn=base.s1_burn,
-        s2_dry=base.s2_dry, s2_prop=base.s2_prop*s2_pf,
-        s2_thrust=base.s2_thrust, s2_isp_v=base.s2_isp_v*s2_if,
-        s2_burn=base.s2_burn, payload=base.payload, fairing=base.fairing*fair_f,
-        diameter=base.diameter, cd_base=base.cd_base
-    ))
+    front_index = 0
+    while fronts[front_index]:
+        next_front = []
+        for p in fronts[front_index]:
+            for q in dominates[p]:
+                dominated_by[q] -= 1
+                if dominated_by[q] == 0:
+                    next_front.append(q)
+
+        front_index += 1
+        fronts.append(next_front)
+
+    return [front for front in fronts if front]
+
+
+def _crowding_distance(front: list[int], pop_obj: list[tuple[float, ...]]) -> dict[int, float]:
+    distance = {idx: 0.0 for idx in front}
+    objective_count = len(pop_obj[0])
+
+    for objective_index in range(objective_count):
+        sorted_front = sorted(front, key=lambda idx: pop_obj[idx][objective_index])
+        values = [pop_obj[idx][objective_index] for idx in sorted_front]
+        value_range = max(values) - min(values) or 1e-9
+
+        distance[sorted_front[0]] = float("inf")
+        distance[sorted_front[-1]] = float("inf")
+
+        for pos in range(1, len(sorted_front) - 1):
+            distance[sorted_front[pos]] += (values[pos + 1] - values[pos - 1]) / value_range
+
+    return distance
+
+
+def _clip(genome: list[float]) -> list[float]:
+    return [max(lo, min(hi, value)) for value, (lo, hi) in zip(genome, BOUNDS)]
+
+
+def _mutate(genome: list[float], rate: float = 0.25) -> list[float]:
+    return [
+        value + random.gauss(0, (hi - lo) * 0.1) if random.random() < rate else value
+        for value, (lo, hi) in zip(genome, BOUNDS)
+    ]
+
+
+def _crossover(a: list[float], b: list[float]) -> list[float]:
+    point = random.randint(1, len(a) - 1)
+    return _clip(a[:point] + b[point:])
+
+
+def _normalized_mode_scores(
+    indexes: list[int],
+    objectives: list[tuple[float, float, float]],
+    weights: tuple[float, float, float],
+) -> dict[int, float]:
+    mins = [min(objectives[idx][obj_i] for idx in indexes) for obj_i in range(3)]
+    maxs = [max(objectives[idx][obj_i] for idx in indexes) for obj_i in range(3)]
+    ranges = [(maxs[i] - mins[i]) or 1e-9 for i in range(3)]
+
+    scores = {}
+    for idx in indexes:
+        normalized = [(objectives[idx][i] - mins[i]) / ranges[i] for i in range(3)]
+        scores[idx] = sum(weight * value for weight, value in zip(weights, normalized))
+
+    return scores
+
+
+def run_ga(
+    base: RocketModel,
+    generations: int = 80,
+    population: int = 60,
+    mode: str = "balanced",
+) -> dict[str, Any]:
+    generations = max(1, int(generations))
+    population = max(4, int(population))
+    selected_mode = mode if mode in MODE_WEIGHTS else "balanced"
+    weights = MODE_WEIGHTS[selected_mode]
+
+    pop = [_clip([random.uniform(lo, hi) for lo, hi in BOUNDS]) for _ in range(population)]
+    history_dv = []
+
+    for _ in range(generations):
+        offspring = []
+        while len(offspring) < population:
+            a, b = random.sample(pop, 2)
+            offspring.append(_clip(_mutate(_crossover(a, b))))
+
+        combined = pop + offspring
+        objectives = [_objectives(_build(base, genome)) for genome in combined]
+        fronts = _fast_nondominated_sort(objectives)
+
+        selected_indexes = []
+        for front in fronts:
+            if len(selected_indexes) + len(front) <= population:
+                selected_indexes.extend(front)
+                continue
+
+            crowding = _crowding_distance(front, objectives)
+            needed = population - len(selected_indexes)
+            selected_indexes.extend(sorted(front, key=lambda idx: -crowding[idx])[:needed])
+            break
+
+        pop = [combined[idx] for idx in selected_indexes]
+        best_delta_v = max(-objectives[idx][1] for idx in selected_indexes)
+        history_dv.append(round(best_delta_v, 1))
+
+    final_objectives = [_objectives(_build(base, genome)) for genome in pop]
+    fronts = _fast_nondominated_sort(final_objectives)
+    pareto_indexes = fronts[0] if fronts else list(range(len(pop)))
+    mode_scores = _normalized_mode_scores(pareto_indexes, final_objectives, weights)
+    sorted_pareto = sorted(pareto_indexes, key=lambda idx: mode_scores[idx])
+
+    solutions = []
+    for idx in sorted_pareto:
+        genome = pop[idx]
+        f1, f2, f3 = final_objectives[idx]
+        delta_v = -f2
+        payload_ratio = -f3
+        estimated_apogee = max(0, (delta_v - 7700) * 0.055)
+
+        solutions.append({
+            "id": idx,
+            "delta_v": round(delta_v, 1),
+            "total_mass_kg": round(f1, 1),
+            "payload_ratio": round(payload_ratio * 100, 2),
+            "est_apogee_km": round(estimated_apogee, 1),
+            "s1_prop_factor": round(genome[0], 4),
+            "s2_prop_factor": round(genome[1], 4),
+            "s1_isp_factor": round(genome[2], 4),
+            "s2_isp_factor": round(genome[3], 4),
+            "fairing_factor": round(genome[4], 4),
+            "applied_config": {
+                "s1_prop_kg": round(base.s1_prop * genome[0], 1),
+                "s2_prop_kg": round(base.s2_prop * genome[1], 1),
+                "s1_isp_vac": round(base.s1_isp_v * genome[2], 1),
+                "s1_isp_sl": round(base.s1_isp_sl * genome[2], 1),
+                "s2_isp_vac": round(base.s2_isp_v * genome[3], 1),
+                "fairing_kg": round(base.fairing * genome[4], 1),
+            },
+            "mode_score": round(mode_scores[idx], 4),
+        })
+
+    recommended = solutions[0] if solutions else {}
+
     return {
-        "best_config": {
-            "S1 propellant factor": round(s1_pf, 4),
-            "S2 propellant factor": round(s2_pf, 4),
-            "S1 Isp factor":        round(s1_if, 4),
-            "S2 Isp factor":        round(s2_if, 4),
-            "Fairing mass factor":  round(fair_f, 4),
-            "Optimal ΔV (m/s)":    round(dv_opt, 1),
-            "Estimated mass (kg)":  round(best_f, 1),
-        },
-        "history": history,
+        "mode": selected_mode,
+        "pareto_front": solutions[:12],
+        "recommended": recommended,
+        "history_dv": history_dv,
+        "history": history_dv,
         "generations": generations,
+        "population": population,
+        "pareto_size": len(pareto_indexes),
+        "best_config": {
+            "S1 propellant factor": recommended.get("s1_prop_factor"),
+            "S2 propellant factor": recommended.get("s2_prop_factor"),
+            "S1 Isp factor": recommended.get("s1_isp_factor"),
+            "S2 Isp factor": recommended.get("s2_isp_factor"),
+            "Fairing mass factor": recommended.get("fairing_factor"),
+            "Optimal ΔV (m/s)": recommended.get("delta_v"),
+            "Estimated mass (kg)": recommended.get("total_mass_kg"),
+            "Payload ratio (%)": recommended.get("payload_ratio"),
+        },
     }

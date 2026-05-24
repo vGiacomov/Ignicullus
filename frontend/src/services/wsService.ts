@@ -81,6 +81,65 @@ function speak(text: string) {
   enqueueTts(text)
 }
 
+async function fetchTtsAudio(body: string, query: string) {
+  const backendOrigin = `${window.location.protocol}//${window.location.hostname}:8000`
+  const attempts = [
+    {
+      url: `/api/tts/supertonic?t=${Date.now()}`,
+      init: {
+        method: 'POST',
+        cache: 'no-store',
+        headers: {
+          'Content-Type': 'application/json',
+          'Cache-Control': 'no-store',
+        },
+        body,
+      },
+    },
+    {
+      url: `/api/tts/supertonic?${query}`,
+      init: {
+        method: 'GET',
+        cache: 'no-store',
+        headers: {
+          'Cache-Control': 'no-store',
+        },
+      },
+    },
+    {
+      url: `${backendOrigin}/api/tts/supertonic?${query}`,
+      init: {
+        method: 'GET',
+        cache: 'no-store',
+        headers: {
+          'Cache-Control': 'no-store',
+        },
+      },
+    },
+  ] as const
+
+  let lastError: unknown = null
+
+  for (const attempt of attempts) {
+    try {
+      const response = await fetch(attempt.url, attempt.init)
+
+      if (response.status === 404 || response.status === 405) {
+        lastError = new Error(`${response.status} ${response.statusText}`)
+        continue
+      }
+
+      return response
+    } catch (error) {
+      lastError = error
+    }
+  }
+
+  throw lastError instanceof Error
+    ? lastError
+    : new Error('TTS backend is not reachable')
+}
+
 async function flushTTS() {
   if (ttsQueue.length === 0) {
     ttsActive = false
@@ -110,42 +169,14 @@ async function flushTTS() {
       voice: store.ttsVoice || TTS_SETTINGS.defaultVoice,
       lang: TTS_SETTINGS.lang,
     })
-    const query = () => new URLSearchParams({
+    const query = new URLSearchParams({
       t: String(Date.now()),
       text,
       voice: store.ttsVoice || TTS_SETTINGS.defaultVoice,
       lang: TTS_SETTINGS.lang,
     }).toString()
 
-    let response = await fetch(`/api/tts/supertonic?t=${Date.now()}`, {
-      method: 'POST',
-      cache: 'no-store',
-      headers: {
-        'Content-Type': 'application/json',
-        'Cache-Control': 'no-store',
-      },
-      body,
-    })
-
-    if (response.status === 404 || response.status === 405) {
-      response = await fetch(`/api/tts/supertonic?${query()}`, {
-        method: 'GET',
-        cache: 'no-store',
-        headers: {
-          'Cache-Control': 'no-store',
-        },
-      })
-    }
-
-    if (response.status === 404 || response.status === 405) {
-      response = await fetch(`http://localhost:8000/api/tts/supertonic?${query()}`, {
-        method: 'GET',
-        cache: 'no-store',
-        headers: {
-          'Cache-Control': 'no-store',
-        },
-      })
-    }
+    const response = await fetchTtsAudio(body, query)
 
     if (!response.ok) {
       throw new Error(await response.text())
