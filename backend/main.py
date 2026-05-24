@@ -1,12 +1,14 @@
 import sys, os
 sys.path.insert(0, os.path.dirname(__file__))
 
-from fastapi import FastAPI, WebSocket
+from fastapi import FastAPI, HTTPException, Query, Response, WebSocket
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from api.routes import router
 from api.ws_simulate import ws_simulate_handler
 from core.flight_db import init_db
+from core.supertonic_tts import DEFAULT_SUPERTONIC_VOICE, synthesize_supertonic_wav
+from models.schemas import TTSRequest
 
 app = FastAPI(title="IGNICULLUS API", version="2.0.0")
 init_db()
@@ -24,6 +26,39 @@ async def ws_endpoint(ws: WebSocket):
 @app.get("/api/health")
 def health():
     return {"status": "ok", "service": "IGNICULLUS Backend v2.0"}
+
+def _tts_response(text: str, voice: str, lang: str):
+    try:
+        audio = synthesize_supertonic_wav(text[:500], voice, lang)
+    except ModuleNotFoundError as exc:
+        raise HTTPException(
+            status_code=503,
+            detail="Supertonic is not installed. Run: pip install supertonic"
+        ) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+    return Response(
+        content=audio,
+        media_type="audio/wav",
+        headers={
+            "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
+            "Pragma": "no-cache",
+            "Expires": "0",
+        },
+    )
+
+@app.post("/api/tts/supertonic")
+def tts_supertonic_post(req: TTSRequest):
+    return _tts_response(req.text, req.voice, req.lang)
+
+@app.get("/api/tts/supertonic")
+def tts_supertonic_get(
+    text: str = Query(..., max_length=500),
+    voice: str = DEFAULT_SUPERTONIC_VOICE,
+    lang: str = "en",
+):
+    return _tts_response(text, voice, lang)
 
 # Serve built frontend
 dist_path = os.path.join(os.path.dirname(__file__), "..", "frontend", "dist")

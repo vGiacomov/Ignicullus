@@ -1,5 +1,6 @@
 from pydantic import BaseModel, Field
 from typing import Optional
+from core.supertonic_tts import DEFAULT_SUPERTONIC_VOICE
 
 class StageConfig(BaseModel):
     dry_mass:  float = Field(gt=0)
@@ -42,3 +43,8 @@ class OptimizeRequest(BaseModel):
     sim:         SimConfig        = SimConfig()
     generations: int = 80
     population:  int = 40
+
+class TTSRequest(BaseModel):
+    text:  str
+    voice: str = DEFAULT_SUPERTONIC_VOICE
+    lang:  str = "en"

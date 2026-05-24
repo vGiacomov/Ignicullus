@@ -24,7 +24,10 @@ interface MissionStore {
   orbitAchieved: boolean
   failReason:  string
   ttsEnabled:  boolean
+  ttsVoice:    string
+  ttsStatus:   string
   animSpeed:   number
+  simPaused:   boolean
   wsRef:       WebSocket | null
 
   setRocket:     (p: Partial<RocketConfig>) => void
@@ -39,7 +42,10 @@ interface MissionStore {
   setStatus:     (s: MissionStore['status']) => void
   setOrbit:      (ok: boolean, reason: string) => void
   setTTS:        (on: boolean) => void
+  setTTSVoice:   (voice: string) => void
+  setTTSStatus:  (status: string) => void
   setAnimSpeed:  (s: number) => void
+  setSimPaused:  (paused: boolean) => void
   setWs:         (ws: WebSocket | null) => void
   reset:         () => void
 }
@@ -48,7 +54,7 @@ export const useMissionStore = create<MissionStore>((set) => ({
   rocket: DEFAULT_ROCKET, atmosphere: DEFAULT_ATM, simConfig: DEFAULT_SIM,
   scenarioId: 'nominal', scenarios: [], telemetry: [], events: [],
   status: 'idle', orbitAchieved: false, failReason: '',
-  ttsEnabled: true, animSpeed: 1.0, wsRef: null,
+  ttsEnabled: true, ttsVoice: 'F4', ttsStatus: 'ready', animSpeed: 10.0, simPaused: false, wsRef: null,
 
   setRocket:     (p) => set(s => ({ rocket: { ...s.rocket, ...p } })),
   setStage1:     (p) => set(s => ({ rocket: { ...s.rocket, stage1: { ...s.rocket.stage1, ...p } } })),
@@ -62,8 +68,11 @@ export const useMissionStore = create<MissionStore>((set) => ({
   setStatus:     (status) => set({ status }),
   setOrbit:      (orbitAchieved, failReason) => set({ orbitAchieved, failReason }),
   setTTS:        (ttsEnabled) => set({ ttsEnabled }),
+  setTTSVoice:   (ttsVoice) => set({ ttsVoice }),
+  setTTSStatus:  (ttsStatus) => set({ ttsStatus }),
   setAnimSpeed:  (animSpeed) => set({ animSpeed }),
+  setSimPaused:  (simPaused) => set({ simPaused }),
   setWs:         (wsRef) => set({ wsRef }),
   reset:         () => set({ telemetry: [], events: [], status: 'idle',
-                              orbitAchieved: false, failReason: '' }),
+                              orbitAchieved: false, failReason: '', simPaused: false }),
 }))

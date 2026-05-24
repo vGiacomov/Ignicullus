@@ -2,35 +2,16 @@ import { useMissionStore } from '../store/missionStore'
 
 let ttsQueue: string[] = []
 let ttsActive = false
-let ttsUnlocked = false
-let cachedVoice: SpeechSynthesisVoice | null = null
+let playbackQueue: any[] = []
+let playbackTimer: ReturnType<typeof window.setTimeout> | null = null
+let currentAudio: HTMLAudioElement | null = null
+let audioContext: AudioContext | null = null
+let audioUnlocked = false
 
 const TTS_SETTINGS = {
-  rate: 1.05,
-  pitch: 1.0,
-  f4Pitch: 1.15,
-  volume: 1.0,
+  defaultVoice: 'F4',
+  lang: 'en',
   maxQueue: 120,
-  preferredFemaleVoice: [
-    'f4',
-    'f-4',
-    'female',
-    'zira',
-    'samantha',
-    'hazel',
-    'susan',
-    'amelia',
-    'aria',
-    'candice',
-    'helen',
-    'ivy',
-    'jenny',
-    'karen',
-    'luna',
-    'olivia',
-    'sara',
-    'sarah',
-  ],
 }
 
 const TTS_EVENT_MESSAGES: Record<string, string> = {
@@ -48,65 +29,33 @@ const TTS_EVENT_MESSAGES: Record<string, string> = {
   'IMPACT': 'Vehicle impact. Mission terminated.',
 }
 
-if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
-  window.speechSynthesis.addEventListener('voiceschanged', () => {
-    cachedVoice = null
-  })
+function setTtsStatus(status: string) {
+  useMissionStore.getState().setTTSStatus(status)
 }
 
-function canUseTTS() {
-  return typeof window !== 'undefined' && 'speechSynthesis' in window
-}
+function unlockBrowserAudio() {
+  if (audioUnlocked) return
 
-function unlockTTS() {
-  if (!canUseTTS()) return
-  if (ttsUnlocked) return
+  const AudioContextCtor = window.AudioContext || (window as any).webkitAudioContext
+  if (!AudioContextCtor) return
 
-  try {
-    window.speechSynthesis.cancel()
+  audioContext = audioContext || new AudioContextCtor()
 
-    const utterance = new SpeechSynthesisUtterance(' ')
-    utterance.lang = 'en-US'
-    utterance.volume = 0
-
-    window.speechSynthesis.speak(utterance)
-    ttsUnlocked = true
-  } catch (error) {
-    console.warn('TTS unlock error:', error)
-  }
-}
-
-function resolveCachedVoice() {
-  if (!canUseTTS()) return null
-  if (cachedVoice) return cachedVoice
-
-  const voices = window.speechSynthesis.getVoices()
-  if (!voices.length) return null
-
-  const toLower = (value: string) => value.toLowerCase()
-  const isFemaleHint = (v: SpeechSynthesisVoice) => {
-    const candidate = `${v.name} ${v.voiceURI}`.toLowerCase()
-    return TTS_SETTINGS.preferredFemaleVoice.some(hint => candidate.includes(hint))
+  if (audioContext.state === 'suspended') {
+    audioContext.resume().catch(() => undefined)
   }
 
-  const f4ByExact = voices.find(v => toLower(v.name).includes('f4') || toLower(v.voiceURI).includes('f4'))
-  const likelyFemale = voices.find(v => toLower(v.lang).startsWith('en') && isFemaleHint(v))
-  const anyFemale = voices.find(v => isFemaleHint(v))
+  const source = audioContext.createBufferSource()
+  const gain = audioContext.createGain()
+  const buffer = audioContext.createBuffer(1, 1, 22050)
 
-  cachedVoice =
-    f4ByExact ||
-    likelyFemale ||
-    anyFemale ||
-    voices.find(v => v.lang === 'en-US') ||
-    voices.find(v => v.lang.startsWith('en')) ||
-    voices[0] ||
-    null
+  gain.gain.value = 0
+  source.buffer = buffer
+  source.connect(gain)
+  gain.connect(audioContext.destination)
+  source.start(0)
 
-  return cachedVoice
-}
-
-function getVoice() {
-  return resolveCachedVoice()
+  audioUnlocked = true
 }
 
 function enqueueTts(text: string) {
@@ -128,18 +77,11 @@ function speak(text: string) {
   const store = useMissionStore.getState()
 
   if (!store.ttsEnabled) return
-  if (!canUseTTS()) return
 
-  unlockTTS()
   enqueueTts(text)
 }
 
-function flushTTS() {
-  if (!canUseTTS()) {
-    ttsActive = false
-    return
-  }
-
+async function flushTTS() {
   if (ttsQueue.length === 0) {
     ttsActive = false
     return
@@ -154,40 +96,188 @@ function flushTTS() {
     return
   }
 
-  const utterance = new SpeechSynthesisUtterance(text)
-  const voice = getVoice()
-  const hasFemalePreference = !!(voice && (
-    `${voice.name} ${voice.voiceURI}`.toLowerCase().includes('f4') ||
-    TTS_SETTINGS.preferredFemaleVoice.some((hint) =>
-      `${voice.name} ${voice.voiceURI}`.toLowerCase().includes(hint)
-    )
-  ))
+  try {
+    const store = useMissionStore.getState()
+    setTtsStatus(`generating ${store.ttsVoice} - wait`)
+    console.info('[IGNICULLUS TTS] request start', {
+      voice: store.ttsVoice || TTS_SETTINGS.defaultVoice,
+      chars: text.length,
+    })
 
-  if (voice) {
-    utterance.voice = voice
-  }
+    const startedAt = performance.now()
+    const body = JSON.stringify({
+      text,
+      voice: store.ttsVoice || TTS_SETTINGS.defaultVoice,
+      lang: TTS_SETTINGS.lang,
+    })
+    const query = () => new URLSearchParams({
+      t: String(Date.now()),
+      text,
+      voice: store.ttsVoice || TTS_SETTINGS.defaultVoice,
+      lang: TTS_SETTINGS.lang,
+    }).toString()
 
-  utterance.lang = voice?.lang || 'en-US'
-  utterance.rate = TTS_SETTINGS.rate
-  utterance.pitch = hasFemalePreference ? TTS_SETTINGS.f4Pitch : TTS_SETTINGS.pitch
-  utterance.volume = TTS_SETTINGS.volume
+    let response = await fetch(`/api/tts/supertonic?t=${Date.now()}`, {
+      method: 'POST',
+      cache: 'no-store',
+      headers: {
+        'Content-Type': 'application/json',
+        'Cache-Control': 'no-store',
+      },
+      body,
+    })
 
-  utterance.onend = () => {
+    if (response.status === 404 || response.status === 405) {
+      response = await fetch(`/api/tts/supertonic?${query()}`, {
+        method: 'GET',
+        cache: 'no-store',
+        headers: {
+          'Cache-Control': 'no-store',
+        },
+      })
+    }
+
+    if (response.status === 404 || response.status === 405) {
+      response = await fetch(`http://localhost:8000/api/tts/supertonic?${query()}`, {
+        method: 'GET',
+        cache: 'no-store',
+        headers: {
+          'Cache-Control': 'no-store',
+        },
+      })
+    }
+
+    if (!response.ok) {
+      throw new Error(await response.text())
+    }
+
+    setTtsStatus(`downloading audio ${store.ttsVoice}`)
+    const blob = await response.blob()
+    console.info('[IGNICULLUS TTS] audio received', {
+      voice: store.ttsVoice || TTS_SETTINGS.defaultVoice,
+      bytes: blob.size,
+      ms: Math.round(performance.now() - startedAt),
+    })
+
+    const url = URL.createObjectURL(blob)
+    const audio = new Audio(url)
+
+    currentAudio = audio
+
+    audio.onended = () => {
+      URL.revokeObjectURL(url)
+      currentAudio = null
+      setTtsStatus('ready')
+      flushTTS()
+    }
+
+    audio.onerror = () => {
+      URL.revokeObjectURL(url)
+      currentAudio = null
+      setTtsStatus('audio playback error')
+      flushTTS()
+    }
+
+    setTtsStatus(`playing ${store.ttsVoice}`)
+    await audio.play()
+  } catch (error) {
+    console.warn('Supertonic TTS error:', error)
+    setTtsStatus(error instanceof Error ? error.message : 'Supertonic TTS error')
     flushTTS()
   }
+}
 
-  utterance.onerror = () => {
-    flushTTS()
+function clearPlayback() {
+  playbackQueue = []
+
+  if (playbackTimer) {
+    window.clearTimeout(playbackTimer)
+    playbackTimer = null
   }
+}
 
-  window.speechSynthesis.speak(utterance)
+function processSimulationMessage(msg: any) {
+  const s = useMissionStore.getState()
+
+  if (msg.type === 'telemetry') {
+    s.addTelemetry(msg)
+  } else if (msg.type === 'event') {
+    s.addEvent({
+      time: msg.time,
+      name: msg.name,
+      desc: msg.desc,
+      icon: msg.icon
+    })
+
+    const ttsText = TTS_EVENT_MESSAGES[msg.name]
+    if (ttsText) {
+      if (msg.name === 'MAX-Q') {
+        speak(`Max Q. ${msg.desc}`)
+        return
+      }
+      if (msg.name === 'ABORT') {
+        speak(`Mission abort. ${msg.desc}`)
+        return
+      }
+      speak(ttsText)
+    }
+  } else if (msg.type === 'complete') {
+    s.setOrbit(msg.orbit, msg.fail_reason || '')
+    s.setStatus(msg.orbit ? 'complete' : 'failed')
+    s.setSimPaused(false)
+    s.wsRef?.close()
+
+    if (msg.orbit) {
+      speak('Mission complete. Orbit achieved.')
+    } else {
+      speak(`Mission failed. ${msg.fail_reason || 'Orbit was not achieved.'}`)
+    }
+  } else if (msg.type === 'error') {
+    s.setStatus('failed')
+    s.setOrbit(false, msg.message)
+    s.setSimPaused(false)
+    s.wsRef?.close()
+    speak(`Mission error. ${msg.message}`)
+  }
+}
+
+function schedulePlayback() {
+  if (playbackTimer) return
+
+  const store = useMissionStore.getState()
+  if (store.simPaused || store.status !== 'running') return
+  if (playbackQueue.length === 0) return
+
+  const msg = playbackQueue.shift()
+  processSimulationMessage(msg)
+
+  const speed = Math.max(1, Math.min(useMissionStore.getState().animSpeed, 30))
+  const delayMs = Math.max(4, 80 / speed)
+
+  playbackTimer = window.setTimeout(() => {
+    playbackTimer = null
+    schedulePlayback()
+  }, delayMs)
+}
+
+function enqueueSimulationMessage(msg: any) {
+  playbackQueue.push(msg)
+  schedulePlayback()
 }
 
 export function launchSimulation() {
-  unlockTTS()
-
+  unlockBrowserAudio()
   const store = useMissionStore.getState()
 
+  if (currentAudio) {
+    currentAudio.pause()
+    currentAudio = null
+  }
+
+  ttsQueue = []
+  ttsActive = false
+
+  clearPlayback()
   store.reset()
   store.setStatus('running')
 
@@ -203,7 +293,7 @@ export function launchSimulation() {
       scenario: store.scenarioId,
       atmosphere: store.atmosphere,
       sim: store.simConfig,
-      speed: store.animSpeed,
+      speed: 30,
     }
 
     ws.send(JSON.stringify(payload))
@@ -211,48 +301,13 @@ export function launchSimulation() {
 
   ws.onmessage = (ev) => {
     const msg = JSON.parse(ev.data)
-    const s = useMissionStore.getState()
 
     if (msg.type === 'start') {
       speak(`Launch sequence initiated. ${msg.rocket_name}, ${msg.scenario} scenario. T minus zero.`)
-    } else if (msg.type === 'telemetry') {
-      s.addTelemetry(msg)
-    } else if (msg.type === 'event') {
-      s.addEvent({
-        time: msg.time,
-        name: msg.name,
-        desc: msg.desc,
-        icon: msg.icon
-      })
-
-      const ttsText = TTS_EVENT_MESSAGES[msg.name]
-      if (ttsText) {
-        if (msg.name === 'MAX-Q') {
-          speak(`Max Q. ${msg.desc}`)
-          return
-        }
-        if (msg.name === 'ABORT') {
-          speak(`Mission abort. ${msg.desc}`)
-          return
-        }
-        speak(ttsText)
-      }
-    } else if (msg.type === 'complete') {
-      s.setOrbit(msg.orbit, msg.fail_reason || '')
-      s.setStatus(msg.orbit ? 'complete' : 'failed')
-
-      if (msg.orbit) {
-        speak('Mission complete. Orbit achieved.')
-      } else {
-        speak(`Mission failed. ${msg.fail_reason || 'Orbit was not achieved.'}`)
-      }
-
-      ws.close()
-    } else if (msg.type === 'error') {
-      s.setStatus('failed')
-      s.setOrbit(false, msg.message)
-      speak(`Mission error. ${msg.message}`)
+      return
     }
+
+    enqueueSimulationMessage(msg)
   }
 
   ws.onerror = () => {
@@ -265,16 +320,55 @@ export function launchSimulation() {
 export function abortSimulation() {
   const ws = useMissionStore.getState().wsRef
 
+  clearPlayback()
+
   if (ws) {
     ws.close()
   }
 
-  if (canUseTTS()) {
-    window.speechSynthesis.cancel()
+  if (currentAudio) {
+    currentAudio.pause()
+    currentAudio = null
   }
 
   ttsQueue = []
   ttsActive = false
 
   useMissionStore.getState().setStatus('idle')
+  useMissionStore.getState().setSimPaused(false)
+}
+
+export function pauseSimulation() {
+  useMissionStore.getState().setSimPaused(true)
+
+  if (playbackTimer) {
+    window.clearTimeout(playbackTimer)
+    playbackTimer = null
+  }
+}
+
+export function resumeSimulation() {
+  useMissionStore.getState().setSimPaused(false)
+  schedulePlayback()
+}
+
+export function getAvailableTtsVoices() {
+  return ['F4', 'F1', 'F2', 'F3', 'F5', 'M1', 'M2', 'M3', 'M4', 'M5'].map(voice => ({
+    id: voice,
+    name: `Supertonic 3 ${voice}`,
+    lang: 'en',
+  }))
+}
+
+export function testTtsVoice() {
+  unlockBrowserAudio()
+
+  if (currentAudio) {
+    currentAudio.pause()
+    currentAudio = null
+  }
+
+  ttsQueue = []
+  ttsActive = false
+  speak('Supertonic three voice test. Ignicullus telemetry online.')
 }

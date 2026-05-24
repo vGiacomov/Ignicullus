@@ -1,17 +1,20 @@
-from fastapi import APIRouter, Response
+from fastapi import APIRouter, HTTPException, Query, Response
 from core.scenarios import SCENARIOS
 from core.simulation import simulate
 from core.optimizer import run_ga
 from core.flight_db import delete_flight_run, list_flight_runs, save_flight_run
+from core.supertonic_tts import DEFAULT_SUPERTONIC_VOICE, synthesize_supertonic_wav
 from core.rocket_model import build_from_config
-from models.schemas import SimRequest, OptimizeRequest
+from models.schemas import SimRequest, OptimizeRequest, TTSRequest
 
 from datetime import datetime
 from io import BytesIO
+import logging
 import textwrap
 
 
 router = APIRouter()
+logger = logging.getLogger("ignicullus.api")
 
 
 @router.get("/scenarios")
@@ -59,6 +62,46 @@ def delete_flight(run_id: int):
 def optimize(req: OptimizeRequest):
     rocket = build_from_config(req.rocket)
     return run_ga(rocket, req.generations, req.population)
+
+
+def _supertonic_tts_response(text: str, voice: str, lang: str):
+    logger.warning("TTS endpoint hit voice=%s chars=%s", voice, len(text))
+    try:
+        audio = synthesize_supertonic_wav(text[:500], voice, lang)
+    except ModuleNotFoundError as exc:
+        raise HTTPException(
+            status_code=503,
+            detail="Supertonic is not installed. Run: pip install supertonic"
+        ) from exc
+    except Exception as exc:
+        logger.exception("TTS endpoint failed")
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+    logger.warning("TTS endpoint returning wav bytes=%s", len(audio))
+
+    return Response(
+        content=audio,
+        media_type="audio/wav",
+        headers={
+            "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
+            "Pragma": "no-cache",
+            "Expires": "0",
+        },
+    )
+
+
+@router.post("/tts/supertonic")
+def supertonic_tts(req: TTSRequest):
+    return _supertonic_tts_response(req.text, req.voice, req.lang)
+
+
+@router.get("/tts/supertonic")
+def supertonic_tts_get(
+    text: str = Query(..., max_length=500),
+    voice: str = DEFAULT_SUPERTONIC_VOICE,
+    lang: str = "en",
+):
+    return _supertonic_tts_response(text, voice, lang)
 
 
 def _safe_get(obj, key, default=None):

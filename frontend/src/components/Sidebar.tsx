@@ -1,5 +1,6 @@
 import { NavLink } from 'react-router-dom'
 import { useMissionStore } from '../store/missionStore'
+import { getAvailableTtsVoices, testTtsVoice } from '../services/wsService'
 
 const NAV = [
   { to:'/',           icon:'🏠', label:'Home' },
@@ -11,7 +12,11 @@ const NAV = [
 ]
 
 export default function Sidebar() {
-  const { scenarios, scenarioId, setScenario, ttsEnabled, setTTS, animSpeed, setAnimSpeed, status } = useMissionStore()
+  const {
+    scenarios, scenarioId, setScenario, ttsEnabled, setTTS,
+    ttsVoice, setTTSVoice, ttsStatus, status
+  } = useMissionStore()
+  const voices = getAvailableTtsVoices()
 
   return (
     <aside style={{
@@ -73,14 +78,6 @@ export default function Sidebar() {
       <div style={{ padding:'8px 0', borderTop:'1px solid #21262d', marginTop:'auto' }}>
         <div style={{ padding:'6px 16px 8px', fontSize:'0.6rem', color:'#484f58',
           letterSpacing:'0.2em', textTransform:'uppercase' }}>System</div>
-        <div style={{ padding:'0 16px 8px' }}>
-          <label style={{ fontSize:'0.7rem', color:'#8b949e', display:'block', marginBottom:4 }}>
-            Anim speed: {animSpeed.toFixed(1)}×
-          </label>
-          <input type="range" min={0.5} max={5} step={0.5} value={animSpeed}
-            onChange={e => setAnimSpeed(+e.target.value)}
-            style={{ width:'100%', accentColor:'#f0a500' }}/>
-        </div>
         <div style={{ padding:'0 16px 8px', display:'flex', alignItems:'center', gap:8 }}>
           <button onClick={() => setTTS(!ttsEnabled)} style={{
             padding:'5px 12px', borderRadius:6, fontSize:'0.7rem',
@@ -90,6 +87,34 @@ export default function Sidebar() {
           }}>
             {ttsEnabled ? '🔊 TTS ON' : '🔇 TTS OFF'}
           </button>
+          <button onClick={testTtsVoice} style={{
+            padding:'5px 10px', borderRadius:6, fontSize:'0.7rem',
+            background:'rgba(88,166,255,0.1)', border:'1px solid rgba(88,166,255,0.35)',
+            color:'#58a6ff', fontFamily:'var(--font-mono)', cursor:'pointer'
+          }}>
+            TEST
+          </button>
+        </div>
+        <div style={{ padding:'0 16px 8px' }}>
+          <label style={{ fontSize:'0.62rem', color:'#8b949e', display:'block', marginBottom:4 }}>
+            TTS voice
+          </label>
+          <select value={ttsVoice} onChange={e => setTTSVoice(e.target.value)} style={{
+            width:'100%', background:'#161b22', color:'#e6edf3', border:'1px solid #30363d',
+            borderRadius:6, padding:'5px 6px', fontFamily:'var(--font-mono)', fontSize:'0.65rem'
+          }}>
+            {voices.map(voice => (
+              <option key={voice.id} value={voice.id}>
+                {voice.name} [{voice.lang}]
+              </option>
+            ))}
+          </select>
+          <div style={{ fontSize:'0.58rem', color:'#484f58', marginTop:4, lineHeight:1.35 }}>
+            Uses Supertonic 3 backend model, not Microsoft Edge voices.
+          </div>
+          <div style={{ fontSize:'0.58rem', color:'#58a6ff', marginTop:4, lineHeight:1.35 }}>
+            TTS: {ttsStatus}
+          </div>
         </div>
         {/* Status indicator */}
         <div style={{ padding:'6px 16px', display:'flex', alignItems:'center', gap:6 }}>

@@ -1,6 +1,6 @@
 import { useNavigate } from 'react-router-dom'
 import { useMissionStore } from '../store/missionStore'
-import { launchSimulation, abortSimulation } from '../services/wsService'
+import { launchSimulation, abortSimulation, pauseSimulation, resumeSimulation } from '../services/wsService'
 import {
   LineChart, Line, AreaChart, Area, XAxis, YAxis,
   CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine
@@ -162,6 +162,66 @@ function RocketStatusPanel({ status, orbitAchieved }: { status: string; orbitAch
   )
 }
 
+function MissionPlaybackPanel() {
+  const { status, simPaused, animSpeed, setAnimSpeed, simConfig, setSimConfig, telemetry } = useMissionStore()
+  const isRunning = status === 'running'
+  const last = telemetry[telemetry.length - 1]
+  const progress = Math.min(((last?.t ?? 0) / simConfig.max_time) * 100, 100)
+
+  return (
+    <div style={{
+      background:'#161b22', border:'1px solid #21262d', borderRadius:10,
+      padding:'14px 18px', minHeight:150, display:'flex', flexDirection:'column',
+      justifyContent:'space-between', gap:12
+    }}>
+      <div>
+        <div style={{ fontSize:'0.62rem', color:'#484f58', fontFamily:'var(--font-mono)',
+          letterSpacing:'0.18em', textTransform:'uppercase', marginBottom:8 }}>
+          Simulation Control
+        </div>
+        <div style={{ display:'flex', gap:8 }}>
+          <button onClick={simPaused ? resumeSimulation : pauseSimulation} disabled={!isRunning} style={{
+            flex:1, padding:'9px 12px', borderRadius:8, fontSize:'0.74rem',
+            fontFamily:'var(--font-mono)', fontWeight:700, textTransform:'uppercase',
+            background: !isRunning ? 'rgba(139,148,158,0.08)' :
+              simPaused ? 'rgba(0,200,150,0.15)' : 'rgba(240,165,0,0.15)',
+            color: !isRunning ? '#484f58' : simPaused ? '#00c896' : '#f0a500',
+            border:`1px solid ${!isRunning ? '#30363d' : simPaused ? '#00c89666' : '#f0a50066'}`,
+            cursor: isRunning ? 'pointer' : 'not-allowed'
+          }}>
+            {simPaused ? '▶ Resume' : '⏸ Pause'}
+          </button>
+        </div>
+      </div>
+
+      <div>
+        <label style={{ display:'flex', justifyContent:'space-between',
+          fontSize:'0.68rem', color:'#8b949e', fontFamily:'var(--font-mono)', marginBottom:6 }}>
+          <span>Playback speed</span><span>{animSpeed.toFixed(0)}×</span>
+        </label>
+        <input type="range" min={1} max={30} step={1} value={animSpeed}
+          onChange={e => setAnimSpeed(+e.target.value)}
+          style={{ width:'100%', accentColor:'#f0a500' }}/>
+      </div>
+
+      <div>
+        <label style={{ display:'flex', justifyContent:'space-between',
+          fontSize:'0.68rem', color:'#8b949e', fontFamily:'var(--font-mono)', marginBottom:6 }}>
+          <span>Test length</span><span>{simConfig.max_time.toFixed(0)}s</span>
+        </label>
+        <input type="range" min={120} max={1800} step={30} value={simConfig.max_time}
+          disabled={isRunning}
+          onChange={e => setSimConfig({ max_time:+e.target.value })}
+          style={{ width:'100%', accentColor:'#58a6ff', opacity:isRunning ? 0.45 : 1 }}/>
+        <div style={{ height:4, background:'#21262d', borderRadius:2, marginTop:8 }}>
+          <div style={{ height:'100%', width:`${progress}%`, background:'#58a6ff',
+            borderRadius:2, boxShadow:'0 0 8px #58a6ff66' }}/>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 const CustomTooltip = ({ active, payload, label }: any) => {
   if (!active || !payload?.length) return null
   return (
@@ -178,7 +238,7 @@ const CustomTooltip = ({ active, payload, label }: any) => {
 export default function MissionControlPage() {
   const navigate = useNavigate()
   const { status, telemetry, events, orbitAchieved, failReason,
-          scenarioId, scenarios } = useMissionStore()
+          scenarioId, scenarios, simPaused } = useMissionStore()
 
   const last = telemetry[telemetry.length - 1]
   const isRunning = status === 'running'
@@ -216,8 +276,8 @@ export default function MissionControlPage() {
               status==='failed' ? '#ff4444' : '#484f58'}60`,
             color: isRunning ? '#f0a500' : status==='complete' ? '#00c896' :
               status==='failed' ? '#ff4444' : '#8b949e' }}>
-            {isRunning ? '⚡ SIMULATING' : status==='complete' ? '✅ COMPLETE' :
-             status==='failed' ? '❌ FAILED' : '⏸ STANDBY'}
+            {simPaused ? '⏸ PAUSED' : isRunning ? '⚡ SIMULATING' :
+             status==='complete' ? '✅ COMPLETE' : status==='failed' ? '❌ FAILED' : '⏸ STANDBY'}
           </div>
           {!isRunning ? (
             <button onClick={launchSimulation} style={{
@@ -292,7 +352,10 @@ export default function MissionControlPage() {
         </div>
       )}
 
-      <RocketStatusPanel status={status} orbitAchieved={orbitAchieved} />
+      <div style={{ display:'grid', gridTemplateColumns:'1fr 320px', gap:12 }}>
+        <RocketStatusPanel status={status} orbitAchieved={orbitAchieved} />
+        <MissionPlaybackPanel />
+      </div>
 
       {/* Charts + Event Log */}
       <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr 280px', gap:12, flex:1, minHeight:420 }}>

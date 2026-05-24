@@ -1,0 +1,9 @@
+{
+  "name": "ignicullus",
+  "private": true,
+  "version": "2.0.0",
+  "scripts": {
+    "dev": "npm --prefix frontend run dev",
+    "build": "npm --prefix frontend run build"
+  }
+}

@@ -12,11 +12,11 @@ async def ws_simulate_handler(websocket: WebSocket):
         data = json.loads(raw)
         req  = SimRequest(**data)
         rocket = build_from_config(req.rocket)
-        speed  = max(0.5, min(req.speed, 10.0))
+        speed  = max(1.0, min(req.speed, 30.0))
 
         await websocket.send_text(json.dumps({
             "type": "start",
-            "rocket_name": "DTM-2 Launch Vehicle",
+            "rocket_name": "IGNICULLUS Launch Vehicle",
             "scenario": req.scenario
         }))
 
