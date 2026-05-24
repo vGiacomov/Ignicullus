@@ -50,3 +50,5 @@ coverage/
 # Local artifacts
 *.tmp
 *.temp
+
+*.pyc

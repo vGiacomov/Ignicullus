@@ -6,6 +6,7 @@ const NAV = [
   { to:'/prelaunch',  icon:'⚙️', label:'Pre-Launch Config' },
   { to:'/mission',    icon:'🚀', label:'Mission Control' },
   { to:'/analysis',   icon:'📊', label:'Analysis' },
+  { to:'/flights',    icon:'🏆', label:'Flight Scores' },
   { to:'/optimizer',  icon:'🧬', label:'AI Optimizer' },
 ]
 

@@ -27,3 +27,20 @@ export interface Scenario {
   id: string; name: string; color: string
   outcome: string; description: string
 }
+export interface FlightRun {
+  id: number
+  created_at: string
+  scenario: string
+  success: number
+  score: number
+  final_time_s: number
+  final_alt_km: number
+  final_vel_ms: number
+  max_alt_km: number
+  max_vel_ms: number
+  max_mach: number
+  max_q_kpa: number
+  payload_kg: number
+  total_mass_kg: number
+  fail_reason: string
+}

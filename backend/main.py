@@ -6,8 +6,10 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from api.routes import router
 from api.ws_simulate import ws_simulate_handler
+from core.flight_db import init_db
 
 app = FastAPI(title="IGNICULLUS API", version="2.0.0")
+init_db()
 
 app.add_middleware(CORSMiddleware,
     allow_origins=["*"], allow_credentials=True,

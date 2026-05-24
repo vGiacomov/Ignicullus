@@ -8,6 +8,7 @@ import PreLaunchPage from './pages/PreLaunchPage'
 import MissionControlPage from './pages/MissionControlPage'
 import AnalysisPage from './pages/AnalysisPage'
 import OptimizerPage from './pages/OptimizerPage'
+import FlightHistoryPage from './pages/FlightHistoryPage'
 
 export default function App() {
   const setScenarios = useMissionStore(s => s.setScenarios)
@@ -25,6 +26,7 @@ export default function App() {
             <Route path="/prelaunch" element={<PreLaunchPage />} />
             <Route path="/mission"   element={<MissionControlPage />} />
             <Route path="/analysis"  element={<AnalysisPage />} />
+            <Route path="/flights"   element={<FlightHistoryPage />} />
             <Route path="/optimizer" element={<OptimizerPage />} />
             <Route path="*"          element={<Navigate to="/" />} />
           </Routes>

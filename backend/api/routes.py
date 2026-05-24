@@ -2,6 +2,7 @@ from fastapi import APIRouter, Response
 from core.scenarios import SCENARIOS
 from core.simulation import simulate
 from core.optimizer import run_ga
+from core.flight_db import delete_flight_run, list_flight_runs, save_flight_run
 from core.rocket_model import build_from_config
 from models.schemas import SimRequest, OptimizeRequest
 
@@ -24,17 +25,34 @@ def simulate_sync(req: SimRequest):
 
     events = []
     telem = []
+    complete = None
 
     for msg in simulate(rocket, req.atmosphere, req.sim, req.scenario):
         if msg["type"] == "telemetry":
             telem.append(msg)
         elif msg["type"] in ("event", "complete"):
             events.append(msg)
+            if msg["type"] == "complete":
+                complete = msg
+
+    if complete:
+        save_flight_run(req, telem, complete)
 
     return {
         "telemetry": telem,
         "events": events
     }
+
+
+@router.get("/flights")
+def get_flights():
+    return list_flight_runs()
+
+
+@router.delete("/flights/{run_id}")
+def delete_flight(run_id: int):
+    deleted = delete_flight_run(run_id)
+    return {"deleted": deleted}
 
 
 @router.post("/optimize")

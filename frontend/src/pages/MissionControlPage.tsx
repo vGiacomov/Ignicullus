@@ -53,6 +53,115 @@ function EventLog({ events }: { events: { time:number; name:string; desc:string;
   )
 }
 
+function RocketStatusPanel({ status, orbitAchieved }: { status: string; orbitAchieved: boolean }) {
+  const failed = status === 'failed' && !orbitAchieved
+  const success = status === 'complete' && orbitAchieved
+  const running = status === 'running'
+  const label = running ? 'LIFTOFF' : failed ? 'EXPLOSION' : success ? 'SUCCESS' : 'READY'
+  const color = running ? '#f0a500' : failed ? '#ff4444' : success ? '#00c896' : '#8b949e'
+
+  return (
+    <div style={{
+      background:'#161b22', border:`1px solid ${color}55`, borderRadius:10,
+      padding:'14px 18px', minHeight:150, display:'grid',
+      gridTemplateColumns:'160px 1fr', gap:18, alignItems:'center', overflow:'hidden',
+      position:'relative'
+    }}>
+      <style>{`
+        @keyframes missionRocketLaunch {
+          0% { transform: translateY(34px) scale(0.88); opacity: 0.88; }
+          55% { transform: translateY(-16px) scale(0.96); opacity: 1; }
+          100% { transform: translateY(-54px) scale(1.02); opacity: 0.92; }
+        }
+        @keyframes missionRocketFail {
+          0% { transform: translateY(-18px) rotate(0deg) scale(0.95); opacity: 1; }
+          45% { transform: translateY(-2px) rotate(14deg) scale(1.04); opacity: 1; }
+          75% { transform: translateY(12px) rotate(-18deg) scale(0.5); opacity: 0.45; }
+          100% { transform: translateY(24px) rotate(28deg) scale(0.05); opacity: 0; }
+        }
+        @keyframes missionExplosion {
+          0%, 34% { transform: scale(0); opacity: 0; }
+          48% { transform: scale(1.2); opacity: 1; }
+          100% { transform: scale(2.2); opacity: 0; }
+        }
+        @keyframes missionFlame {
+          0%, 100% { transform: scaleY(0.85); opacity: 0.65; }
+          50% { transform: scaleY(1.2); opacity: 1; }
+        }
+      `}</style>
+      <div style={{
+        height:120, position:'relative', display:'flex', justifyContent:'center',
+        alignItems:'flex-end', borderBottom:'1px solid #30363d'
+      }}>
+        <div style={{
+          position:'absolute', bottom:2, width:110, height:1,
+          background:'linear-gradient(90deg, transparent, #8b949e, transparent)'
+        }} />
+        {failed && (
+          <div style={{
+            position:'absolute', width:76, height:76, borderRadius:'50%',
+            background:'radial-gradient(circle, #ffe66d 0%, #ff8800 32%, #ff4444 58%, transparent 72%)',
+            boxShadow:'0 0 30px rgba(255,68,68,0.75)',
+            animation:'missionExplosion 1.15s ease-out forwards'
+          }} />
+        )}
+        <div style={{
+          position:'relative', width:38, height:92,
+          animation: failed ? 'missionRocketFail 1.15s ease-in forwards' :
+            running ? 'missionRocketLaunch 1.6s ease-in-out infinite alternate' : 'none',
+          opacity: failed ? undefined : 1,
+        }}>
+          <div style={{
+            position:'absolute', left:7, right:7, top:0, height:24,
+            clipPath:'polygon(50% 0, 100% 100%, 0 100%)',
+            background: success ? '#00c896' : '#d9ecff',
+            boxShadow:`0 0 10px ${color}88`
+          }} />
+          <div style={{
+            position:'absolute', left:8, right:8, top:22, bottom:18,
+            border:'2px solid #d9ecff', borderRadius:'8px 8px 4px 4px',
+            background:'linear-gradient(90deg, rgba(88,166,255,0.25), rgba(255,255,255,0.1), rgba(88,166,255,0.25))'
+          }} />
+          <div style={{ position:'absolute', left:1, bottom:15, width:13, height:28,
+            clipPath:'polygon(100% 0, 0 100%, 100% 78%)', background:'#58a6ff' }} />
+          <div style={{ position:'absolute', right:1, bottom:15, width:13, height:28,
+            clipPath:'polygon(0 0, 100% 100%, 0 78%)', background:'#58a6ff' }} />
+          <div style={{
+            position:'absolute', left:12, right:12, bottom:0, height:18,
+            border:'2px solid #8b949e', borderRadius:'2px 2px 8px 8px'
+          }} />
+          {running && (
+            <div style={{
+              position:'absolute', left:12, right:12, bottom:-28, height:34,
+              clipPath:'polygon(50% 100%, 100% 0, 0 0)',
+              background:'linear-gradient(180deg, #ffe66d 0%, #f0a500 46%, rgba(255,68,68,0) 100%)',
+              transformOrigin:'top center',
+              animation:'missionFlame 0.16s linear infinite'
+            }} />
+          )}
+        </div>
+      </div>
+      <div>
+        <div style={{
+          fontFamily:'var(--font-hud)', fontSize:'1.4rem', fontWeight:900,
+          color, letterSpacing:'0.1em', textTransform:'uppercase'
+        }}>
+          {label}
+        </div>
+        <div style={{
+          fontFamily:'var(--font-mono)', color:'#8b949e', fontSize:'0.74rem',
+          lineHeight:1.6, marginTop:6
+        }}>
+          {running ? 'Vehicle climbing. Telemetry active.' :
+           failed ? 'Vehicle lost. Explosion confirmed.' :
+           success ? 'Orbit confirmed. Mission success.' :
+           'Vehicle armed and waiting for launch.'}
+        </div>
+      </div>
+    </div>
+  )
+}
+
 const CustomTooltip = ({ active, payload, label }: any) => {
   if (!active || !payload?.length) return null
   return (
@@ -182,6 +291,8 @@ export default function MissionControlPage() {
           </div>
         </div>
       )}
+
+      <RocketStatusPanel status={status} orbitAchieved={orbitAchieved} />
 
       {/* Charts + Event Log */}
       <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr 280px', gap:12, flex:1, minHeight:420 }}>

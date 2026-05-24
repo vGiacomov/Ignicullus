@@ -1,5 +1,5 @@
 import axios from 'axios'
-import type { Scenario } from '../types'
+import type { FlightRun, Scenario } from '../types'
 
 const api = axios.create({ baseURL: '/api' })
 
@@ -11,6 +11,12 @@ export const runSyncSimulation = (payload: unknown) =>
 
 export const runOptimize = (payload: unknown) =>
   api.post('/optimize', payload).then(r => r.data)
+
+export const fetchFlights = (): Promise<FlightRun[]> =>
+  api.get('/flights').then(r => r.data)
+
+export const deleteFlight = (id: number): Promise<{ deleted: boolean }> =>
+  api.delete(`/flights/${id}`).then(r => r.data)
 
 export const generatePdfReport = async (payload: unknown) => {
   const response = await api.post('/report/pdf', payload, {
